@@ -1,0 +1,4 @@
+DEFAULT_PORT = 1369
+PORT_FILE = "port.info"
+LOCAL_HOST = "127.0.0.1"
+
