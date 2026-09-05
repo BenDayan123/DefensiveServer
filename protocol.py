@@ -1,4 +1,5 @@
 import struct
+from typing import Tuple
 
 # Request Header: Client ID (16B), Version (1B), Code (2B), Payload Size (4B) = 23 Bytes
 REQ_HEADER_FORMAT = "<16s B H I"
@@ -26,3 +27,10 @@ CODE_RESP_MSG_CONFIRM = 1604
 CODE_RESP_RECONNECT_SUCCESS = 1605
 CODE_RESP_RECONNECT_FAIL = 1606
 CODE_RESP_GENERAL_ERROR = 1607
+
+def unpack_request_header(header_bytes: bytes) -> Tuple[bytes, int, int, int]:
+    return struct.unpack(REQ_HEADER_FORMAT, header_bytes)
+
+def pack_response(code: int, payload: bytes = b"", version: int = 3) -> bytes:
+    header = struct.pack(RESP_HEADER_FORMAT, version, code, len(payload))
+    return header + payload
