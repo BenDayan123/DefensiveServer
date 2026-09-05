@@ -1,4 +1,5 @@
 import selectors, socket
+import protocol
 
 class ClientSession:
     """
@@ -29,13 +30,13 @@ class Server:
 
         # Register the listening socket to handle new connections
         self.selector.register(server_sock, selectors.EVENT_READ, data=None)
-        print(f"[*] Server listening on ({self.host}:{self.port})...")
+        print(f"[**] Server listening on ({self.host}:{self.port})")
 
         try:
             while True:
                 # Block until I/O events are available
-                evenets = self.selector.select(timeout=None)
-                for key, mask in evenets:
+                events = self.selector.select(timeout=None)
+                for key, mask in events:
                     if key.data is None:
                         # Listener socket is ready -> Accept new connection
                         self._accept_connection(key.fileobj)
@@ -43,10 +44,13 @@ class Server:
                         # Established client socket is ready -> Service read/write
                         self._handle_client(key, mask)
 
+        except KeyboardInterrupt:
+            print("\n[*] Server stopping...")
         except:
             print("\n[*] Server shutting down...")
-            self.selector.close()
             server_sock.close()
+        finally:
+            self.selector.close()
 
     def _accept_connection(self, sock: socket.socket):
         """
@@ -90,7 +94,8 @@ class Server:
             # Append new bytes to this client's incoming buffer
             session.in_buffer.extend(chunk)
 
-            # TO DO: Check if one or more full packets are ready to be parsed
+            # Check if one or more full packets are ready to be parsed
+            self._process_packets(conn, session)
 
         except ConnectionResetError:
             print(f"[-] Client {session.addr} suddenly dropped connection.")
@@ -98,7 +103,6 @@ class Server:
         except Exception as e:
             print(f"[!] Read error from {session.addr}: {e}")
             self._disconnect(conn)
-
 
     def _handle_write(self, conn: socket.socket, session: ClientSession):
         """
@@ -117,9 +121,36 @@ class Server:
             print(f"[!] Write error to {session.addr}: '{e}'")
             self._disconnect(conn)
 
-    def _close_connection(self, conn: socket.socket):
+    def _process_packets(self, conn: socket.socket, session: ClientSession):
         """
-        Cleans up and releases socket resources safely.
+        Extracts complete request frames (Header + Payload) from the buffer.
+        """
+        while True:
+            #Do we have enough bytes for the 23-byte header?
+            if len(session.in_buffer) < protocol.REQ_HEADER_SIZE:
+                break  # Wait for more bytes to arrive in future read events
+
+            # Unpack header without removing it to inspect payload size
+            header_bytes = bytes(session.in_buffer[:protocol.REQ_HEADER_SIZE])
+            client_id, version, code, payload_size = protocol.unpack_request_header(header_bytes)
+
+            total_packet_size = protocol.REQ_HEADER_SIZE + payload_size
+
+            # Do we have the complete payload for this request?
+            if len(session.in_buffer) < total_packet_size:
+                break  # Complete packet hasn't arrived yet; keep waiting
+            
+            # got full packet, extract payload and consume bytes from buffer
+            payload = bytes(session.in_buffer[protocol.REQ_HEADER_SIZE:total_packet_size])
+            session.in_buffer = session.in_buffer[total_packet_size:]
+            
+            break;
+            # TODO: handle payload later
+
+
+    def _disconnect(self, conn: socket.socket):
+        """
+        Cleans up and releases socket resources.
         """
         try:
             self.selector.unregister(conn)
