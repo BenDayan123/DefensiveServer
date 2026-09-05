@@ -1,19 +1,9 @@
 import socket, selectors, os
-from utils import DEFAULT_PORT, PORT_FILE, LOCAL_HOST
+from utils import load_port, LOCAL_HOST
 
 sel = selectors.DefaultSelector()
 
-def get_port() -> int:
-    if os.path.exists(PORT_FILE):
-        try: 
-            with open(PORT_FILE, "r") as f:
-                return int(f.read().strip())
-        except Exception as e:
-            print("[!] Warning: Could not read '{PORT_FILE}' ({e}). Using default port '{DEFAULT_PORT}'.")
-    else:
-        print(f"[!] Warning: '{PORT_FILE}' not found. Using default port '{DEFAULT_PORT}'.")
 
-    return DEFAULT_PORT
     
 def accept_connection(sock) -> None:
     """Handles an incoming connection from a new client."""
@@ -33,12 +23,12 @@ def handle_client(conn) -> None:
             print(f"[>] Received {len(data)} bytes from client.")
 
             # Send response back to the client
-            response = b"Connection verified"
+            response = b"Connection verified!"
             conn.sendall(response)
             print(f"[<] Sent {len(response)} bytes back to client.")
         else:
             # An empty read shows socket closure by the client
-            print("[-] Client disconnected gracefully.")
+            print("[-] Client disconnected.")
             sel.unregister(conn)
             conn.close()
 
@@ -55,8 +45,7 @@ def main() -> None:
     """
     Server entry point: sets up socket options, binds, and runs the event loop.
     """
-    port = get_port()
-    host = LOCAL_HOST
+    port, host = load_port(), LOCAL_HOST
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Allow immediate reuse of the local address/port
