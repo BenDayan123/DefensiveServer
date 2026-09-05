@@ -39,9 +39,9 @@ class Server:
                     if key.data is None:
                         # Listener socket is ready -> Accept new connection
                         self._accept_connection(key.fileobj)
-                    else 
+                    else:
                         # Established client socket is ready -> Service read/write
-                        self._service_client(key, mask)
+                        self._handle_client(key, mask)
 
         except:
             print("\n[*] Server shutting down...")
@@ -60,14 +60,62 @@ class Server:
         # Register the client socket for READ events
         self.selector.register(conn, selectors.EVENT_READ, data=session)
 
-    def _service_client(self, key: selectors.SelectorKey, mask: int):
+    def _handle_client(self, key: selectors.SelectorKey, mask: int):
         """
         Routes the ready client socket to either read or write operations.
         """
         conn:socket.socket = key.fileobj
         session: ClientSession = key.data
 
+        # socket is ready for reading incoming data
+        if mask & selectors.EVENT_READ:
+            self._handle_read(conn, session)
 
+        # socket is ready for sending outgoing responses
+        if mask & selectors.EVENT_WRITE:
+            self._handle_write(conn, session)
+
+    def _handle_read(self, conn:socket.socket, session: ClientSession):
+        """
+        Reads bytes from the client and triggers packet processing.
+        """
+        try:
+            chunk = conn.recv(4096)
+            if not chunk:
+                # Empty read means the client closed the connection cleanly
+                print(f"[-] Client {session.addr} disconnected.")
+                self._disconnect(conn)
+                return
+
+            # Append new bytes to this client's incoming buffer
+            session.in_buffer.extend(chunk)
+
+            # TO DO: Check if one or more full packets are ready to be parsed
+
+        except ConnectionResetError:
+            print(f"[-] Client {session.addr} suddenly dropped connection.")
+            self._disconnect(conn)
+        except Exception as e:
+            print(f"[!] Read error from {session.addr}: {e}")
+            self._disconnect(conn)
+
+
+    def _handle_write(self, conn: socket.socket, session: ClientSession):
+        """
+        Sends pending response bytes from out_buffer over the socket.
+        """
+        try:
+            if session.out_buffer:
+                bytes_sent = conn.send(session.out_buffer)
+                session.out_buffer = session.out_buffer[bytes_sent:]  # Remove sent bytes
+
+            # If all data was transmitted, stop listening for WRITE events
+            if not session.out_buffer:
+                self.selector.modify(conn, selectors.EVENT_READ, data=session)
+
+        except Exception as e:
+            print(f"[!] Write error to {session.addr}: '{e}'")
+            self._disconnect(conn)
 
     def _close_connection(self, conn: socket.socket):
         """
