@@ -1,6 +1,6 @@
 import selectors, socket
 import protocol
-
+from request_handler import RequestHandler
 class ClientSession:
     """
     Holds the temporary connection state for a single connected client.
@@ -143,9 +143,13 @@ class Server:
             # got full packet, extract payload and consume bytes from buffer
             payload = bytes(session.in_buffer[protocol.REQ_HEADER_SIZE:total_packet_size])
             session.in_buffer = session.in_buffer[total_packet_size:]
-            
-            break;
-            # TODO: handle payload later
+
+            response = RequestHandler.handle(client_id, code, payload)
+
+            # Queue the generated response in out_buffer and enable WRITE event
+            if response:
+                session.out_buffer.extend(response)
+                self.selector.modify(conn, selectors.EVENT_READ | selectors.EVENT_WRITE, data=session)
 
 
     def _disconnect(self, conn: socket.socket):
