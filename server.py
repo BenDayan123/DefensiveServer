@@ -36,9 +36,13 @@ class Server:
                 # Block until I/O events are available
                 evenets = self.selector.select(timeout=None)
                 for key, mask in evenets:
-                    # The listening socket is ready, pass the raw socket object to callback function ('accept_connection')
-                    callback = key.data
-                    callback(key.fileobj)
+                    if key.data is None:
+                        # Listener socket is ready -> Accept new connection
+                        self._accept_connection(key.fileobj)
+                    else 
+                        # Established client socket is ready -> Service read/write
+                        self._service_client(key, mask)
+
         except:
             print("\n[*] Server shutting down...")
             self.selector.close()
@@ -55,6 +59,15 @@ class Server:
         session = ClientSession(conn,addr)
         # Register the client socket for READ events
         self.selector.register(conn, selectors.EVENT_READ, data=session)
+
+    def _service_client(self, key: selectors.SelectorKey, mask: int):
+        """
+        Routes the ready client socket to either read or write operations.
+        """
+        conn:socket.socket = key.fileobj
+        session: ClientSession = key.data
+
+
 
     def _close_connection(self, conn: socket.socket):
         """
