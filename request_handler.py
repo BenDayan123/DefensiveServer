@@ -12,9 +12,9 @@ class RequestHandler:
     def handle(self, client_id: str, code:int, payload:bytes) -> bytes:
         try:
             if code == protocol.CODE_REQ_REGISTER:
-                return RequestHandler._handle_registration(payload)
+                return self._handle_registration(payload)
             elif code == protocol.CODE_REQ_SEND_PUB_KEY:
-                return RequestHandler._handle_public_key(client_id, payload);
+                return self._handle_public_key(client_id, payload);
             elif code == protocol.CODE_REQ_RECONNECT:
                 return;
             elif code == protocol.CODE_REQ_SEND_FILE:
