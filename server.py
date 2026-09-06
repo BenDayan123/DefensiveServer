@@ -18,6 +18,7 @@ class Server:
         self.host = host
         self.port = port
         self.selector = selectors.DefaultSelector()
+        self.handler = RequestHandler()
 
     def start(self):
         server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -144,7 +145,7 @@ class Server:
             payload = bytes(session.in_buffer[protocol.REQ_HEADER_SIZE:total_packet_size])
             session.in_buffer = session.in_buffer[total_packet_size:]
 
-            response = RequestHandler.handle(client_id, code, payload)
+            response = self.handler.handle(client_id, code, payload)
 
             # Queue the generated response in out_buffer and enable WRITE event
             if response:
