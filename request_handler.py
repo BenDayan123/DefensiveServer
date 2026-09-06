@@ -20,13 +20,13 @@ class RequestHandler:
             elif code == protocol.CODE_REQ_SEND_FILE:
                 return;
             elif code == protocol.CODE_REQ_CRC_OK:
-                return;
+                return self._handle_crc_ok(client_id)
             elif code in (protocol.CODE_REQ_CRC_RETRY, protocol.CODE_REQ_CRC_FAIL):
-                return;
+                return self._handle_crc_abort(client_id, code)
             else:
                 return;
         except Exception:
-            return;
+            return protocol.pack_response(protocol.CODE_RESP_GENERAL_ERROR, version=SERVER_VERSION)
 
     def _update_active_clients(self, client_id: bytes, name:str = None, public_key: bytes = None, aes_key: bytes = None):
         if client_id in self.active_clients:
@@ -105,5 +105,12 @@ class RequestHandler:
         # Response 1605: 16-byte Client ID + 128-byte Encrypted AES key
         return protocol.pack_response(protocol.CODE_RESP_RECONNECT_SUCCESS, client_id + encrypted_aes_key, version=SERVER_VERSION)
 
-    
-    
+    def _handle_crc_ok(self, client_id: bytes) -> bytes:
+        """Handles Request 900: Client confirmed CRC match."""
+        print(f"[+] [900] Client {client_id.hex()} verified file successfully.")
+        return protocol.pack_response(protocol.CODE_RESP_MSG_CONFIRM, client_id, version=SERVER_VERSION)
+
+    def _handle_crc_abort(self, client_id: bytes, code: int) -> bytes:
+        """Handles Request 901/902."""
+        print(f"[!] [{code}] Client {client_id.hex()} reported CRC failure.")
+        return protocol.pack_response(protocol.CODE_RESP_MSG_CONFIRM, client_id, version=SERVER_VERSION)
