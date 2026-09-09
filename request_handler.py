@@ -12,21 +12,21 @@ class RequestHandler:
         
     def handle(self, client_id: str, code:int, payload:bytes) -> bytes:
         try:
-            if code == protocol.CODE_REQ_REGISTER:
+            if code == protocol.CODE_REQ_REGISTER: # code = 825
                 return self._handle_registration(payload)
-            elif code == protocol.CODE_REQ_SEND_PUB_KEY:
+            elif code == protocol.CODE_REQ_SEND_PUB_KEY: # code = 826
                 return self._handle_public_key(client_id, payload);
-            elif code == protocol.CODE_REQ_RECONNECT:
+            elif code == protocol.CODE_REQ_RECONNECT: # code = 827
                 return self._handle_reconnect(client_id, payload);
-            elif code == protocol.CODE_REQ_SEND_FILE:
-                return;
-            elif code == protocol.CODE_REQ_CRC_OK:
+            elif code == protocol.CODE_REQ_SEND_FILE: # code = 828
+               return self._handle_receive_file(client_id, payload)
+            elif code == protocol.CODE_REQ_CRC_OK: # code = 900
                 return self._handle_crc_ok(client_id)
-            elif code in (protocol.CODE_REQ_CRC_RETRY, protocol.CODE_REQ_CRC_FAIL):
+            elif code in (protocol.CODE_REQ_CRC_RETRY, protocol.CODE_REQ_CRC_FAIL): # code = 901/902
                 return self._handle_crc_abort(client_id, code)
             else:
                 return;
-        except Exception:
+        except Exception: # code = 1607
             return protocol.pack_response(protocol.CODE_RESP_GENERAL_ERROR, version=SERVER_VERSION)
 
     def _update_active_clients(self, client_id: bytes, name:str = None, public_key: bytes = None, aes_key: bytes = None):
@@ -42,8 +42,14 @@ class RequestHandler:
 
     def _handle_registration(self, payload: bytes) -> bytes:
         client_name = payload.split(b"\x00", 1)[0].decode("utf-8", errors="ignore")
-        new_uuid = uuid.uuid4().bytes
 
+        # Check if username is already registered (Protocol requirement -> 1601)
+        for client in self.active_clients.values():
+            if client.get("name") == client_name:
+                print(f"[-] [825] Rejected: Name '{client_name}' already exists.")
+                return protocol.pack_response(protocol.CODE_RESP_REGISTER_FAIL, version=SERVER_VERSION)
+            
+        new_uuid = uuid.uuid4().bytes
         self._update_active_clients(new_uuid, client_name);
 
         print(f"[+] [825] Registered '{client_name}' -> UUID: {new_uuid.hex()}")
@@ -135,6 +141,13 @@ class RequestHandler:
         decrypted_padded = cipher.decrypt(encrypted_data)
         decrypted_content = decrypted_padded[:orig_size]
 
+        # Save received file to disk in a dedicated directory
+        upload_dir = "received_files"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, os.path.basename(file_name))
+        with open(file_path, "wb") as f:
+            f.write(decrypted_content)
+
         # =========================================================================
         # Calculate Checksum using memcrc from cksum.py
         # =========================================================================
@@ -163,5 +176,7 @@ class RequestHandler:
 
     def _handle_crc_abort(self, client_id: bytes, code: int) -> bytes:
         """Handles Request 901/902."""
-        print(f"[!] [{code}] Client {client_id.hex()} reported CRC failure.")
+        if code == protocol.CODE_REQ_CRC_RETRY:
+            print(f"[!] [901] Client {client_id.hex()} requested retry.")
+        else: print(f"[!] [{code}] Client {client_id.hex()} reported CRC failure.")
         return protocol.pack_response(protocol.CODE_RESP_MSG_CONFIRM, client_id, version=SERVER_VERSION)
