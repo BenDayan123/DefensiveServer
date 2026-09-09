@@ -1,8 +1,9 @@
-import uuid, os
+import uuid, os, struct
 import protocol
 from utils import SERVER_VERSION
 from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Cipher import PKCS1_OAEP, AES
+import cksum
 
 # { client_id_bytes: {"name": str, "public_key": bytes, "aes_key": bytes} }
 class RequestHandler:
@@ -104,6 +105,56 @@ class RequestHandler:
 
         # Response 1605: 16-byte Client ID + 128-byte Encrypted AES key
         return protocol.pack_response(protocol.CODE_RESP_RECONNECT_SUCCESS, client_id + encrypted_aes_key, version=SERVER_VERSION)
+
+    def _handle_receive_file(self, client_id: bytes, payload: bytes) -> bytes:
+        """
+        Handles Request 828:
+        Decrypts the uploaded file, saves it to disk, and computes the POSIX CRC.
+        """
+        # Metadata format: Content Size (4B), Orig Size (4B), Packet No (2B), Total Packets (2B), File Name (255B)
+        meta_format = "<I I H H 255s"
+        meta_size = struct.calcsize(meta_format)
+
+        if len(payload) < meta_size:
+            print("[-] [828] Payload smaller than metadata header.")
+            return protocol.pack_response(protocol.CODE_RESP_GENERAL_ERROR, version=SERVER_VERSION)
+
+        content_size, orig_size, _, _, raw_name = struct.unpack(meta_format, payload[:meta_size])
+        file_name = raw_name.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        encrypted_data = payload[meta_size : meta_size + content_size]
+
+        if client_id not in self.active_clients or not self.active_clients[client_id]["aes_key"]:
+            print(f"[-] [828] Client {client_id.hex()} has no active AES session.")
+            return protocol.pack_response(protocol.CODE_RESP_GENERAL_ERROR, version=SERVER_VERSION)
+
+        aes_key = self.active_clients[client_id]["aes_key"]
+
+        # Decrypt content using AES-256-CBC (IV is 16 zeroes)
+        iv = b"\x00" * 16
+        cipher = AES.new(aes_key, AES.MODE_CBC, iv=iv)
+        decrypted_padded = cipher.decrypt(encrypted_data)
+        decrypted_content = decrypted_padded[:orig_size]
+
+        # =========================================================================
+        # Calculate Checksum using memcrc from cksum.py
+        # =========================================================================
+        crc_val = cksum.memcrc(decrypted_content)
+
+        print(f"[+] [828] Saved '{file_name}' ({orig_size} bytes).")
+        print(f"    Calculated POSIX CRC: {crc_val}")
+
+        # Pack Response 1603:
+        # Layout: Client ID (16B) + Content Size (4B) + File Name (255B) + Checksum (4B) = 279B
+        name_padded = file_name.encode("utf-8")[:254].ljust(protocol.SIZE_CLIENT_NAME, b"\x00")
+        resp_payload = struct.pack(
+            f"<{protocol.SIZE_CLIENT_ID}s I {protocol.SIZE_CLIENT_NAME}s I",
+            client_id,
+            orig_size,
+            name_padded,
+            crc_val
+        )
+
+        return protocol.pack_response(protocol.CODE_RESP_FILE_CRC, resp_payload, version=SERVER_VERSION)
 
     def _handle_crc_ok(self, client_id: bytes) -> bytes:
         """Handles Request 900: Client confirmed CRC match."""
