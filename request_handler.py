@@ -3,13 +3,16 @@ import protocol
 from utils import SERVER_VERSION
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
+from database import Database
 import cksum
 
 # { client_id_bytes: {"name": str, "public_key": bytes, "aes_key": bytes} }
 class RequestHandler:
     def __init__(self):
-        self.active_clients = {}
-        
+        self.db = Database()
+        self.active_clients = self.db.load_clients()
+        self.last_file_for_client = {}  # Tracks client_id -> file_name for CRC match
+
     def handle(self, client_id: str, code:int, payload:bytes) -> bytes:
         try:
             if code == protocol.CODE_REQ_REGISTER: # code = 825
@@ -51,6 +54,7 @@ class RequestHandler:
             
         new_uuid = uuid.uuid4().bytes
         self._update_active_clients(new_uuid, client_name);
+        self.db.add_client(new_uuid, client_name)
 
         print(f"[+] [825] Registered '{client_name}' -> UUID: {new_uuid.hex()}")
         return protocol.pack_response(protocol.CODE_RESP_REGISTER_SUCCESS, new_uuid, SERVER_VERSION)
@@ -75,6 +79,7 @@ class RequestHandler:
 
         aes_key = os.urandom(32)
         self._update_active_clients(client_id, client_name, public_key, aes_key);
+        self.db.update_client_keys(client_id, public_key=public_key, aes_key=aes_key)
 
         # Encrypting the AES key using the RSA public key
         try:
@@ -103,6 +108,7 @@ class RequestHandler:
         # Generate a fresh AES-256 key for this new session
         new_aes_key = os.urandom(32)
         self.active_clients[client_id]["aes_key"] = new_aes_key
+        self.db.update_client_keys(client_id, aes_key=new_aes_key)
 
         pub_key_der = self.active_clients[client_id]["public_key"]
         rsa_key = RSA.import_key(pub_key_der)
@@ -148,6 +154,10 @@ class RequestHandler:
         with open(file_path, "wb") as f:
             f.write(decrypted_content)
 
+        # Record file metadata in files table (Verified defaults to 0)
+        self.db.record_file(client_id, file_name, file_path, verified=False)
+        self.last_file_for_client[client_id] = file_name
+
         # =========================================================================
         # Calculate Checksum using memcrc from cksum.py
         # =========================================================================
@@ -171,6 +181,10 @@ class RequestHandler:
 
     def _handle_crc_ok(self, client_id: bytes) -> bytes:
         """Handles Request 900: Client confirmed CRC match."""
+        file_name = self.last_file_for_client.get(client_id)
+        if file_name:
+            self.db.set_file_verified(client_id, file_name)
+            
         print(f"[+] [900] Client {client_id.hex()} verified file successfully.")
         return protocol.pack_response(protocol.CODE_RESP_MSG_CONFIRM, client_id, version=SERVER_VERSION)
 
