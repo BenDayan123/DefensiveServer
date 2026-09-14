@@ -6,7 +6,6 @@ from Crypto.Cipher import PKCS1_OAEP, AES
 from database import Database
 import cksum
 
-# { client_id_bytes: {"name": str, "public_key": bytes, "aes_key": bytes} }
 class RequestHandler:
     def __init__(self):
         self.db = Database()
@@ -29,7 +28,8 @@ class RequestHandler:
                 return self._handle_crc_abort(client_id, code)
             else:
                 return;
-        except Exception: # code = 1607
+        except Exception as e: # code = 1607
+            print(f"[!] Handler error: {e}")
             return protocol.pack_response(protocol.CODE_RESP_GENERAL_ERROR, version=SERVER_VERSION)
 
     def _update_active_clients(self, client_id: bytes, name:str = None, public_key: bytes = None, aes_key: bytes = None):
@@ -154,7 +154,7 @@ class RequestHandler:
         with open(file_path, "wb") as f:
             f.write(decrypted_content)
 
-        # Record file metadata in files table (Verified defaults to 0)
+        # Record file metadata in files table
         self.db.record_file(client_id, file_name, file_path, verified=False)
         self.last_file_for_client[client_id] = file_name
 
