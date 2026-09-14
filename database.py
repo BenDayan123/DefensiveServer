@@ -1,5 +1,5 @@
-import sqlite3,datetime
-
+import sqlite3
+from datetime import datetime
 DB_FILE = "defensive.db"
 
 class Database:
@@ -45,7 +45,7 @@ class Database:
         return clients
     
     def add_client(self, client_id: bytes, name: str):
-        now = datetime.now()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self.conn:
             self.conn.execute(
                 "INSERT OR REPLACE INTO clients (ID, Name, LastSeen) VALUES (?, ?, ?)",
@@ -53,7 +53,7 @@ class Database:
             )
 
     def update_client_keys(self, client_id: bytes, public_key: bytes = None, aes_key: bytes = None):
-        now = datetime.now()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self.conn:
             if public_key and aes_key:
                 self.conn.execute(
@@ -65,7 +65,7 @@ class Database:
                     "UPDATE clients SET AES = ?, LastSeen = ? WHERE ID = ?",
                     (aes_key, now, client_id)
                 )
-                
+
     def record_file(self, client_id: bytes, file_name: str, path_name: str, verified: bool = False):
         with self.conn:
             self.conn.execute(
