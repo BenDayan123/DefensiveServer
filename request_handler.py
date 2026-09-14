@@ -12,22 +12,24 @@ class RequestHandler:
         self.active_clients = self.db.load_clients()
         self.last_file_for_client = {}  # Tracks client_id -> file_name for CRC match
 
-    def handle(self, client_id: str, code:int, payload:bytes) -> bytes:
+    def handle(self, client_id: str, code:int, payload:bytes) -> bytes | None:
         try:
-            if code == protocol.CODE_REQ_REGISTER: # code = 825
-                return self._handle_registration(payload)
-            elif code == protocol.CODE_REQ_SEND_PUB_KEY: # code = 826
-                return self._handle_public_key(client_id, payload);
-            elif code == protocol.CODE_REQ_RECONNECT: # code = 827
-                return self._handle_reconnect(client_id, payload);
-            elif code == protocol.CODE_REQ_SEND_FILE: # code = 828
-               return self._handle_receive_file(client_id, payload)
-            elif code == protocol.CODE_REQ_CRC_OK: # code = 900
-                return self._handle_crc_ok(client_id)
-            elif code in (protocol.CODE_REQ_CRC_RETRY, protocol.CODE_REQ_CRC_FAIL): # code = 901/902
-                return self._handle_crc_abort(client_id, code)
-            else:
-                return;
+            match code:
+                case protocol.CODE_REQ_REGISTER:
+                    return self._handle_registration(payload)
+                case protocol.CODE_REQ_SEND_PUB_KEY:
+                    return self._handle_public_key(client_id, payload)
+                case protocol.CODE_REQ_RECONNECT:
+                    return self._handle_reconnect(client_id, payload)
+                case protocol.CODE_REQ_SEND_FILE:
+                    return self._handle_receive_file(client_id, payload)
+                case protocol.CODE_REQ_CRC_OK:
+                    return self._handle_crc_ok(client_id)
+                case protocol.CODE_REQ_CRC_RETRY | protocol.CODE_REQ_CRC_FAIL:
+                    return self._handle_crc_abort(client_id, code)
+                case _:
+                    return None
+        
         except Exception as e: # code = 1607
             print(f"[!] Handler error: {e}")
             return protocol.pack_response(protocol.CODE_RESP_GENERAL_ERROR, version=SERVER_VERSION)
