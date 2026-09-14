@@ -1,4 +1,4 @@
-import sqlite3
+import sqlite3,datetime
 
 DB_FILE = "defensive.db"
 
@@ -29,3 +29,25 @@ class Database:
                     PRIMARY KEY (ID, FileName)
                 )
             """)
+
+    def load_clients(self) -> dict:
+        """Loads all registered clients into RAM on server startup for recovery."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT ID, Name, PublicKey, AES FROM clients")
+        clients = {}
+        for row in cursor.fetchall():
+            client_id, name, pub_key, aes_key = row
+            clients[client_id] = {
+                "name": name,
+                "public_key": pub_key,
+                "aes_key": aes_key
+            }
+        return clients
+    
+    def add_client(self, client_id: bytes, name: str):
+        now = datetime.now()
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO clients (ID, Name, LastSeen) VALUES (?, ?, ?)",
+                (client_id, name, now)
+            )
