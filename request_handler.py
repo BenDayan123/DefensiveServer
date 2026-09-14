@@ -6,6 +6,8 @@ from Crypto.Cipher import PKCS1_OAEP, AES
 from database import Database
 import cksum
 
+upload_dir = "received_files"
+
 class RequestHandler:
     def __init__(self):
         self.db = Database()
@@ -15,17 +17,17 @@ class RequestHandler:
     def handle(self, client_id: str, code:int, payload:bytes) -> bytes | None:
         try:
             match code:
-                case protocol.CODE_REQ_REGISTER:
+                case protocol.CODE_REQ_REGISTER: # code = 825
                     return self._handle_registration(payload)
-                case protocol.CODE_REQ_SEND_PUB_KEY:
+                case protocol.CODE_REQ_SEND_PUB_KEY: # code = 826
                     return self._handle_public_key(client_id, payload)
-                case protocol.CODE_REQ_RECONNECT:
+                case protocol.CODE_REQ_RECONNECT: # code = 827
                     return self._handle_reconnect(client_id, payload)
-                case protocol.CODE_REQ_SEND_FILE:
+                case protocol.CODE_REQ_SEND_FILE: # code = 828
                     return self._handle_receive_file(client_id, payload)
-                case protocol.CODE_REQ_CRC_OK:
+                case protocol.CODE_REQ_CRC_OK: # code = 900
                     return self._handle_crc_ok(client_id)
-                case protocol.CODE_REQ_CRC_RETRY | protocol.CODE_REQ_CRC_FAIL:
+                case protocol.CODE_REQ_CRC_RETRY | protocol.CODE_REQ_CRC_FAIL: # code = 901/902
                     return self._handle_crc_abort(client_id, code)
                 case _:
                     return None
@@ -150,15 +152,17 @@ class RequestHandler:
         decrypted_content = decrypted_padded[:orig_size]
 
         # Save received file to disk in a dedicated directory
-        upload_dir = "received_files"
         os.makedirs(upload_dir, exist_ok=True)
-        file_path = os.path.join(upload_dir, os.path.basename(file_name))
+        safe_name = os.path.basename(file_name)
+        file_unique_id = uuid.uuid4().hex[:8]
+        unique_disk_name = f"{client_id.hex()}_{file_unique_id}_{safe_name}"
+        file_path = os.path.join(upload_dir, unique_disk_name)
         with open(file_path, "wb") as f:
             f.write(decrypted_content)
 
         # Record file metadata in files table
-        self.db.record_file(client_id, file_name, file_path, verified=False)
-        self.last_file_for_client[client_id] = file_name
+        self.db.record_file(client_id, unique_disk_name, file_path, verified=False)
+        self.last_file_for_client[client_id] = unique_disk_name
 
         # =========================================================================
         # Calculate Checksum using memcrc from cksum.py
