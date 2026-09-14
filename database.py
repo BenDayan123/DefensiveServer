@@ -51,3 +51,17 @@ class Database:
                 "INSERT OR REPLACE INTO clients (ID, Name, LastSeen) VALUES (?, ?, ?)",
                 (client_id, name, now)
             )
+            
+    def update_client_keys(self, client_id: bytes, public_key: bytes = None, aes_key: bytes = None):
+        now = datetime.now()
+        with self.conn:
+            if public_key and aes_key:
+                self.conn.execute(
+                    "UPDATE clients SET PublicKey = ?, AES = ?, LastSeen = ? WHERE ID = ?",
+                    (public_key, aes_key, now, client_id)
+                )
+            elif aes_key:
+                self.conn.execute(
+                    "UPDATE clients SET AES = ?, LastSeen = ? WHERE ID = ?",
+                    (aes_key, now, client_id)
+                )
