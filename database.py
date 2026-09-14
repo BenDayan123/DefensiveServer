@@ -51,7 +51,7 @@ class Database:
                 "INSERT OR REPLACE INTO clients (ID, Name, LastSeen) VALUES (?, ?, ?)",
                 (client_id, name, now)
             )
-            
+
     def update_client_keys(self, client_id: bytes, public_key: bytes = None, aes_key: bytes = None):
         now = datetime.now()
         with self.conn:
@@ -65,3 +65,17 @@ class Database:
                     "UPDATE clients SET AES = ?, LastSeen = ? WHERE ID = ?",
                     (aes_key, now, client_id)
                 )
+                
+    def record_file(self, client_id: bytes, file_name: str, path_name: str, verified: bool = False):
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)",
+                (client_id, file_name, path_name, 1 if verified else 0)
+            )
+
+    def set_file_verified(self, client_id: bytes, file_name: str):
+        with self.conn:
+            self.conn.execute(
+                "UPDATE files SET Verified = 1 WHERE ID = ? AND FileName = ?",
+                (client_id, file_name)
+            )
