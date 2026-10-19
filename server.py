@@ -1,6 +1,9 @@
-import selectors, socket
+import selectors, socket, time
 import protocol
 from request_handler import RequestHandler
+
+CLIENT_TIMEOUT_SECONDS = 300 # = 5 minutes
+
 class ClientSession:
     """
     Holds the temporary connection state for a single connected client.
@@ -12,6 +15,7 @@ class ClientSession:
         self.addr = addr
         self.in_buffer = bytearray()      # Accumulates incoming raw bytes
         self.out_buffer = bytearray()     # Holds response bytes queued for sending
+        self.last_active = time.time()
 
 class Server:
     def __init__(self, host:str, port: int):
@@ -36,7 +40,7 @@ class Server:
         try:
             while True:
                 # Block until I/O events are available
-                events = self.selector.select(timeout=None)
+                events = self.selector.select(timeout=1.0)
                 for key, mask in events:
                     if key.data is None:
                         # Listener socket is ready -> Accept new connection
@@ -44,6 +48,7 @@ class Server:
                     else:
                         # Established client socket is ready -> Service read/write
                         self._handle_client(key, mask)
+                self._check_timeouts()
 
         except KeyboardInterrupt:
             print("\n[*] Server stopping...")
@@ -52,6 +57,16 @@ class Server:
             server_sock.close()
         finally:
             self.selector.close()
+
+    def _check_timeouts(self):
+        now = time.time()
+        for key in list(self.selector.get_map().values()):
+            session: ClientSession = key.data
+            # key.data is None for the listening socket
+            if session is not None:
+                if abs(now - session.last_active) > CLIENT_TIMEOUT_SECONDS:
+                    print(f"[-] Client {session.addr} timed out (inactive for {CLIENT_TIMEOUT_SECONDS / 60} minutes). Closing connection.")
+                    self._disconnect(session.conn)
 
     def _accept_connection(self, sock: socket.socket):
         """
@@ -88,8 +103,8 @@ class Server:
             chunk = conn.recv(4096)
             if not chunk:
                 # Empty read means the client closed the connection cleanly
-                print(f"[-] Client {session.addr} disconnected.")
-                self._disconnect(conn)
+                # print(f"[-] Client {session.addr} disconnected.")
+                # self._disconnect(conn)
                 return
 
             # Append new bytes to this client's incoming buffer
