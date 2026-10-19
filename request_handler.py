@@ -107,10 +107,17 @@ class RequestHandler:
             print(f"[-] [827] Rejected: Client {client_id.hex()} not recognized.")
             return protocol.pack_response(protocol.CODE_RESP_RECONNECT_FAIL, client_id, version=SERVER_VERSION)
 
+        pub_key_der = self.active_clients[client_id]["public_key"]
+        try:
+            rsa_key = RSA.import_key(pub_key_der)
+            cipher = PKCS1_OAEP.new(rsa_key)
+            new_aes_key = os.urandom(32) # Generate a fresh AES-256 key for this new session
+            encrypted_aes_key = cipher.encrypt(new_aes_key)
+        except Exception as e:
+            print(f"[-] [827] Reconnect RSA encryption failed: {e}. Rejecting reconnect.")
+            return protocol.pack_response(protocol.CODE_RESP_RECONNECT_FAIL, client_id, version=SERVER_VERSION)
+        
         print(f"[+] [827] Re-authenticating '{client_name}' (UUID: {client_id.hex()})")
-
-        # Generate a fresh AES-256 key for this new session
-        new_aes_key = os.urandom(32)
         self.active_clients[client_id]["aes_key"] = new_aes_key
         self.db.update_client_keys(client_id, aes_key=new_aes_key)
 
@@ -157,12 +164,13 @@ class RequestHandler:
         file_unique_id = uuid.uuid4().hex[:8]
         unique_disk_name = f"{client_id.hex()}_{file_unique_id}_{safe_name}"
         file_path = os.path.join(upload_dir, unique_disk_name)
+
         with open(file_path, "wb") as f:
             f.write(decrypted_content)
 
         # Record file metadata in files table
-        self.db.record_file(client_id, unique_disk_name, file_path, verified=False)
-        self.last_file_for_client[client_id] = unique_disk_name
+        self.db.record_file(client_id, safe_name, file_path, verified=False)
+        self.last_file_for_client[client_id] = safe_name
 
         # =========================================================================
         # Calculate Checksum using memcrc from cksum.py
@@ -178,7 +186,7 @@ class RequestHandler:
         resp_payload = struct.pack(
             f"<{protocol.SIZE_CLIENT_ID}s I {protocol.SIZE_CLIENT_NAME}s I",
             client_id,
-            orig_size,
+            content_size,
             name_padded,
             crc_val
         )
